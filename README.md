@@ -166,11 +166,13 @@ Open the local URL printed by Streamlit, normally http://localhost:8501. Upload 
 
 No app screenshot is included: a browser connection was unavailable during the final audit. No screenshot or browser visual test is claimed.
 
-## Checkpoint publication
+## Saved checkpoint
 
-The current checkpoint is **44,872,971 bytes** (about 44.9 MB). Both local .pth files are excluded from new Git additions. The older baseline checkpoint was already tracked and must be removed from the next revision before publishing this update; ignoring a file does not untrack it or remove it from Git history. Both local files are retained.
+The trained checkpoint, [models/wastevision_stage3.pth](models/wastevision_stage3.pth), is included for inference and is **44,872,971 bytes** (about 44.9 MB). A fresh clone can run single-image prediction and Streamlit without retraining or downloading the TrashNet dataset. It contains the epoch-10 model state, class names, saved split, and preprocessing metadata used for the reported results.
 
-Redistribution permission for the ImageNet-derived weights has not been established in this audit. [Torchvision notes that pretrained weights can have their own terms](https://docs.pytorch.org/vision/stable/models.html). The documented training command generates a checkpoint locally; a fresh clone without weights must complete that step before prediction or app use. The current metrics describe the recorded run, not a guarantee for every retraining. Publication of a downloadable checkpoint remains unresolved.
+The older baseline checkpoint remains excluded from the current revision and is retained locally. Historical commits may still contain it. Only the current Stage 3 checkpoint is allowed by the model-file ignore rules.
+
+The model uses torchvision ResNet18 ImageNet weights and a classification head trained on TrashNet. See the [TrashNet source and license](https://github.com/garythung/trashnet) and [torchvision pretrained-weight guidance](https://docs.pytorch.org/vision/stable/models.html). This repository does not establish a separate license for the upstream pretrained weights.
 
 ## Limitations
 

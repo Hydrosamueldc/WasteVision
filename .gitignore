@@ -7,6 +7,7 @@ __pycache__/
 data/*
 !data/README.md
 models/*.pth
+!models/wastevision_stage3.pth
 *.log
 *.tmp
 .env
