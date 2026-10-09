@@ -1,42 +1,53 @@
-"""Run with: streamlit run app.py"""
+"""Stage 6: run with streamlit run app.py."""
 import streamlit as st
 import torch
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
-from utils import ROOT, CLASSES, load_checkpoint, preprocessing
+from utils import ROOT, load_checkpoint, predict_image
 
-st.set_page_config(page_title="WasteVision", page_icon="♻️")
-st.title("WasteVision")
-st.write("Upload one waste item to predict its category.")
+MODEL_PATH = ROOT / "models/wastevision_stage3.pth"
+
+st.set_page_config(page_title="WasteVision — Waste Image Classifier", layout="centered")
+st.title("WasteVision — Waste Image Classifier")
+st.write("Classify an image as cardboard, glass, metal, paper, plastic, or trash.")
+st.caption(
+    "Predictions are experimental and may be wrong, especially for images that differ "
+    "from the training dataset. Model scores are not guarantees of correctness."
+)
 
 
-@st.cache_resource
-def load_model():
+@st.cache_resource(max_entries=1)
+def cached_checkpoint(path, device):
+    """Keep only the model resource cached; never cache uploaded images."""
     torch.set_num_threads(4)
-    model, _ = load_checkpoint(ROOT / "models/wastevision.pth", torch.device("cpu"))
-    return model
+    return load_checkpoint(path, device)
 
 
-if not (ROOT / "models/wastevision.pth").exists():
-    st.info("Train the model first: python train.py")
+if not MODEL_PATH.is_file():
+    st.error("Model checkpoint missing: models/wastevision_stage3.pth. Restore the saved Stage 3 checkpoint.")
     st.stop()
 
-uploaded = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png", "webp"])
+uploaded = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
     try:
         with Image.open(uploaded) as source:
-            image = ImageOps.exif_transpose(source).convert("RGB")
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
-        st.error("This file could not be opened as an image. Please choose another file.")
+            image = source.convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        st.error("This file could not be opened as an image. Please choose a valid JPG or PNG image.")
         st.stop()
-    st.image(image, caption="Uploaded image", alt="Waste item uploaded for classification", width="stretch")
-    model = load_model()
-    with torch.inference_mode():
-        probabilities = model(preprocessing()(image).unsqueeze(0)).softmax(dim=1)[0]
-    scores, indices = probabilities.topk(3)
-    st.subheader(f"Prediction: {CLASSES[indices[0].item()]}")
-    st.write(f"Confidence: {scores[0].item():.1%}")
-    if st.checkbox("Show top 3 predictions"):
-        for score, index in zip(scores.tolist(), indices.tolist()):
-            st.write(f"{CLASSES[index].capitalize()}: {score:.1%}")
-    st.caption("Confidence is a model score, not a guarantee. This model always chooses one of six categories.")
+
+    st.image(image, caption="Uploaded image", alt="Uploaded waste image", width=400)
+    if st.button("Classify Image", type="primary"):
+        try:
+            with st.spinner("Classifying image..."):
+                result = predict_image(image, model_path=MODEL_PATH,
+                                       checkpoint_loader=cached_checkpoint)
+        except Exception as error:
+            # Keep failures readable in the interface rather than showing a traceback.
+            st.error(f"Prediction failed: {error}")
+        else:
+            st.subheader(f"Predicted category: {result['predicted_class']}")
+            st.metric("Model score", f"{result['score']:.2%}")
+            st.write("Top three predictions")
+            for item in result["top_three"]:
+                st.write(f"{item['class'].capitalize()}: {item['score']:.2%}")

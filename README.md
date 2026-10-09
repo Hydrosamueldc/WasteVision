@@ -1,139 +1,193 @@
-# WasteVision
+# WasteVision — Waste Image Classification with Deep Learning
 
-Waste image classification with pretrained ResNet18 and a small Streamlit interface. This educational project predicts one of six categories: cardboard, glass, metal, paper, plastic, or trash.
+A small educational computer vision project that classifies one waste image into **cardboard, glass, metal, paper, plastic, or trash**. It demonstrates dataset preparation, transfer learning with PyTorch, evaluation, and a minimal Streamlit prediction interface.
+
+## Problem
+
+Recognizing waste materials is a useful introduction to image classification. WasteVision learns the six TrashNet categories from labeled photos and predicts a category for a new image. It is a learning project, not a recycling decision system or an object detector.
 
 ## Dataset
 
-[TrashNet](https://github.com/garythung/trashnet), collected by Gary Thung and Mindy Yang, contains 2,527 images: 403 cardboard, 501 glass, 410 metal, 594 paper, 482 plastic, and 137 trash. Images typically show one object against a white background. Use the resized archive from the [official dataset page](https://huggingface.co/datasets/garythung/trashnet/tree/main). Dataset license: MIT; please credit its authors. The dataset is excluded from Git.
+[TrashNet](https://github.com/garythung/trashnet), collected by Gary Thung and Mindy Yang, contains **2,527 images**: 403 cardboard, 501 glass, 410 metal, 594 paper, 482 plastic, and 137 trash. Photos were mostly taken against white posterboard, so they do not represent every real-world setting. The upstream repository provides an [MIT license](https://github.com/garythung/trashnet/blob/master/LICENSE); credit its authors when using its images, including the examples and figures here.
 
-### Duplicate cleanup
-
-A SHA-256 scan found three pairs of identical files with conflicting class labels:
+Six files in three byte-identical pairs have conflicting labels and are excluded from splitting:
 
 - glass/glass115.jpg and metal/metal91.jpg
 - glass/glass176.jpg and plastic/plastic152.jpg
 - glass/glass389.jpg and plastic/plastic332.jpg
 
-Both copies of each pair are excluded by utils.py before splitting, leaving 2,521 images. Original downloaded files stay unchanged. This avoids ambiguous labels and identical images crossing splits. The scan detects exact file duplicates, not visually similar photos.
+The remaining **2,521 images** use a stratified split with seed **42**: **1,764 training / 378 validation / 379 test** (approximately 70/15/15). Exact relative paths are preserved in [results/splits.json](results/splits.json). Original images remain unchanged. Exact duplicate checks do not detect all visually similar photos.
+
+See [data/README.md](data/README.md) for download and folder instructions. The dataset is excluded from Git.
 
 ## Approach
 
-Image folders → stratified train/validation/test split → preprocessing → transfer learning → evaluation → uploaded-image prediction.
+ResNet18 is a familiar, relatively small CNN available in torchvision. Transfer learning reuses features learned on ImageNet, reducing the training needed for this small dataset. The ImageNet backbone is frozen, including BatchNorm running statistics; the final fully connected layer is replaced with **512 inputs and six output logits**. Only that layer is trained.
 
-Transfer learning reuses visual features learned on ImageNet, reducing the training needed for a small dataset. We use [torchvision ResNet18](https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.resnet18.html) with its default pretrained weights. The backbone is frozen and its final layer is replaced with a six-output linear layer. Only that layer is trained. Backbone BatchNorm statistics also stay fixed.
+~~~mermaid
+flowchart LR
+    A[TrashNet folders] --> B[Clean duplicates and saved split]
+    B --> C[Training augmentation]
+    C --> D[Frozen ResNet18 and six-class head]
+    D --> E[Select checkpoint by validation loss]
+    E --> F[Held-out test evaluation]
+    E --> G[Single-image prediction]
+    G --> H[Streamlit interface]
+~~~
 
-- Approximately 70% training, 15% validation, 15% test; stratification preserves class proportions.
-- Seed 42; exact relative image paths saved in results/splits.json and the checkpoint.
-- Training: resize to 256, random 224×224 crop, horizontal flip, ImageNet normalization.
-- Validation/test/app: resize to 256, center crop to 224×224, same normalization.
-- Five epochs, batch size 32, Adam learning rate 0.001, cross-entropy loss.
-- Save the epoch with highest validation accuracy. The test set does not select the checkpoint.
+- Training: resize to 256, random 224 × 224 crop, horizontal flip, tensor conversion.
+- Validation, test, and inference: deterministic resize directly to 224 × 224 and tensor conversion.
+- All inputs: ImageNet mean [0.485, 0.456, 0.406] and standard deviation [0.229, 0.224, 0.225].
+- Training: 10 epochs, batch size 32, CrossEntropyLoss, Adam on the final layer at learning rate 0.001.
+- CPU execution is supported; CUDA is selected when available. No hyperparameter search was performed.
 
-Cross-entropy trains the classifier from raw outputs. At inference, softmax converts outputs into scores that sum to one. These scores are not calibrated probabilities of correctness.
+## Results
 
-## Files
+These results belong to **models/wastevision_stage3.pth**, selected by lowest validation loss. They are separate from the older baseline artifacts described below.
 
-- train.py: split creation, training, best checkpoint, and learning curves.
-- evaluate.py: held-out test metrics, confusion matrix, sample predictions.
-- utils.py: shared model and preprocessing, dataset and checkpoint helpers.
-- app.py: image upload, preview, category, confidence, optional top three.
-- models/wastevision.pth: generated trained weights, labels, and split metadata.
-- results/: generated metrics, split assignments, and figures.
+### Validation
 
-## Run locally
+The actual CPU training run completed **10 epochs**. The selected checkpoint was epoch **10**, with validation loss **0.578062** and validation accuracy **77.51%**. The highest validation accuracy was **78.31%** at epoch 9; it was not the selection criterion. Final training accuracy was **87.87%**, which is not test accuracy. History is recorded in [results/history.csv](results/history.csv).
 
-The environment was tested with Python 3.14.4 on Windows using CPU. Direct dependency versions are pinned in requirements.txt. This project uses a local virtual environment; it does not require a GPU.
+![Actual training and validation curves over ten epochs](results/stage3_training_curves.png)
 
-Windows PowerShell (replace python with python3.14 if that is your installed command):
+### Held-out test set
+
+The saved evaluation covers all **379 test images exactly once**, with **307 correct**.
+
+| Metric | Test result |
+|---|---:|
+| Accuracy | 81.00% |
+| Macro precision | 79.38% |
+| Macro recall | 76.03% |
+| Macro F1-score | 77.17% |
+
+| Class | Precision | Recall | F1-score | Test images |
+|---|---:|---:|---:|---:|
+| cardboard | 98.00% | 80.33% | 88.29% | 61 |
+| glass | 71.26% | 82.67% | 76.54% | 75 |
+| metal | 81.36% | 77.42% | 79.34% | 62 |
+| paper | 79.25% | 94.38% | 86.15% | 89 |
+| plastic | 90.16% | 76.39% | 82.71% | 72 |
+| trash | 56.25% | 45.00% | 50.00% | 20 |
+
+Accuracy measures overall correctness. Precision measures how often predictions of a class are correct; recall measures how many examples of that class are found. F1 balances precision and recall. Macro averages weight all six classes equally.
+
+The largest directional confusions were metal → glass (13/62), plastic → glass (10/72), and cardboard → paper (9/61). Trash was weakest, with only 9/20 images correctly identified. Overall accuracy hides this class imbalance.
+
+![Confusion matrix: true labels on rows, predicted labels on columns](results/stage4/confusion_matrix.png)
+
+![Illustrative test predictions, with correct and incorrect outcomes labeled](results/stage4/sample_predictions.png)
+
+The sample figure includes a success and an error when available; it is illustrative rather than an accuracy estimate. Exact values and per-image predictions are in [metrics.json](results/stage4/metrics.json), with a [classification report](results/stage4/classification_report.txt) and [matrix CSV](results/stage4/confusion_matrix.csv).
+
+The same test split had already been used for an earlier baseline, so this is not its first-ever evaluation. No model tuning was performed after inspecting the current results.
+
+## Project structure
+
+~~~text
+WasteVision/
+├── prepare_data.py              # ImageFolder, split, DataLoaders, examples
+├── utils.py                     # ResNet18, preprocessing, checkpoint, inference
+├── train.py                     # Training and validation
+├── evaluate.py                  # Held-out test evaluation
+├── app.py                       # Minimal Streamlit interface
+├── requirements.txt
+├── README.md
+├── .gitignore
+├── data/
+│   ├── README.md
+│   └── dataset-resized/         # Download locally; ignored by Git
+├── models/
+│   ├── wastevision_stage3.pth   # Current local checkpoint; generated by training
+│   └── wastevision.pth          # Earlier local baseline; not used by current app
+├── results/
+│   ├── splits.json
+│   ├── dataset_examples.png
+│   ├── history.csv
+│   ├── stage3_training_curves.png
+│   ├── stage4/                 # Current metrics, matrix, and sample figures
+│   └── ...                     # Preserved earlier baseline artifacts
+└── test-image.jpg               # TrashNet cardboard/cardboard37.jpg example
+~~~
+
+The older models/wastevision.pth and root-level results/metrics.json, classification_report.txt, history.json, training_curves.png, confusion_matrix.png, and sample_predictions.png are preserved historical baseline artifacts. Their 80.47% test accuracy and center-crop preprocessing do not describe the current model. Current code uses results/stage4/ and direct 224 × 224 evaluation resizing.
+
+## Installation
+
+Tested locally on **Windows with Python 3.14.4 and CPU**. Dependencies are pinned in [requirements.txt](requirements.txt): PyTorch, torchvision, NumPy, matplotlib, scikit-learn, Streamlit, and Pillow. Other Python/OS combinations have not been verified.
+
+Run from the repository root in PowerShell:
 
 ~~~powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ~~~
 
-Download dataset-resized.zip from the official dataset page above and extract it into data/. The final layout must be:
+On macOS/Linux, use .venv/bin/python in place of .\.venv\Scripts\python.exe; that environment has not been tested here.
 
-~~~text
-data/dataset-resized/
-├── cardboard/
-├── glass/
-├── metal/
-├── paper/
-├── plastic/
-└── trash/
-~~~
+## Reproduce the workflow
 
-Then run:
+Download and extract TrashNet as described in [the dataset guide](data/README.md), then run:
 
 ~~~powershell
+.\.venv\Scripts\python.exe prepare_data.py
 .\.venv\Scripts\python.exe train.py
 .\.venv\Scripts\python.exe evaluate.py
+~~~
+
+prepare_data.py loads the dataset with ImageFolder, reuses the saved split, prints counts, and saves labeled examples. train.py downloads pretrained ImageNet weights on its first run, trains only the classification head, and saves the lowest-validation-loss checkpoint. It never evaluates test batches. evaluate.py loads that checkpoint and writes results/stage4/; it does not train or create a new split. Missing checkpoint, split, or dataset files stop evaluation.
+
+**Running training replaces the current checkpoint, history CSV, and training plot. Running evaluation replaces the current Stage 4 outputs.** Preserve any results you want to keep before running these commands. Keep the original dataset and saved split unchanged. Fixed seeds improve reproducibility, but different hardware/library versions can change numerical results.
+
+## Single-image prediction
+
+~~~powershell
+.\.venv\Scripts\python.exe utils.py --image test-image.jpg
+~~~
+
+~~~python
+from utils import predict_image
+
+result = predict_image("test-image.jpg")  # Also accepts a loaded PIL image
+print(result["predicted_class"], result["score"])
+print(result["top_three"])
+~~~
+
+This requires models/wastevision_stage3.pth but does not require the dataset. Labels come from the checkpoint in the saved dataset order. The function uses evaluation mode, disables gradients, and applies softmax to logits. A real CPU run on test-image.jpg predicted cardboard with score **89.6620%**; top alternatives were paper **10.2807%** and trash **0.0281%**. Scores are model preferences, not calibrated probabilities of correctness.
+
+## Streamlit application
+
+~~~powershell
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ~~~
 
-The first training run downloads ImageNet pretrained weights. Later training runs reuse the saved split. Keep dataset files unchanged. Fixed seeds improve reproducibility; hardware and library differences can still change numerical results.
+Open the local URL printed by Streamlit, normally http://localhost:8501. Upload a JPG, JPEG, or PNG, inspect the preview, then click **Classify Image**. The app displays the category, percentage score, and top three predictions. It calls the same predict_image() function and caches the model resource. Uploaded images stay in memory and are not saved permanently. Restart the app after replacing the checkpoint.
 
-On macOS/Linux, use .venv/bin/python instead of .\.venv\Scripts\python.exe. Restart Streamlit after retraining so its cached model reloads the new checkpoint.
+No app screenshot is included: a browser connection was unavailable during the final audit. No screenshot or browser visual test is claimed.
 
-## Evaluation results
+## Checkpoint publication
 
-Actual CPU run: five epochs, seed 42, 1,764 training / 378 validation / 379 test images after duplicate cleanup. Epoch 5 had the best validation accuracy (79.10%) and was evaluated on the test set.
+The current checkpoint is **44,872,971 bytes** (about 44.9 MB). Both local .pth files are excluded from new Git additions. The older baseline checkpoint was already tracked and must be removed from the next revision before publishing this update; ignoring a file does not untrack it or remove it from Git history. Both local files are retained.
 
-**Test accuracy: 80.47%** (305/379 images correct).
-
-| Class | Precision | Recall | F1-score | Test images |
-|---|---:|---:|---:|---:|
-| cardboard | 89.66% | 85.25% | 87.39% | 61 |
-| glass | 71.74% | 88.00% | 79.04% | 75 |
-| metal | 77.05% | 75.81% | 76.42% | 62 |
-| paper | 81.82% | 91.01% | 86.17% | 89 |
-| plastic | 91.07% | 70.83% | 79.69% | 72 |
-| trash | 61.54% | 40.00% | 48.48% | 20 |
-
-| Average | Precision | Recall | F1-score |
-|---|---:|---:|---:|
-| Macro | 78.81% | 75.15% | 76.20% |
-| Weighted | 80.99% | 80.47% | 80.14% |
-
-These numbers come from running evaluate.py; full precision is recorded in results/metrics.json and results/classification_report.txt. Accuracy measures overall correctness. Per-class precision measures how often predictions of a class are correct; recall measures how many images of that class are found; F1 balances both. Macro averages weight classes equally; weighted averages reflect their sample counts.
-
-Evaluation also creates results/training_curves.png, results/confusion_matrix.png, and results/sample_predictions.png. Sample images use a fixed random selection, including mistakes if selected.
-
-![Training and validation loss and accuracy over five epochs](results/training_curves.png)
-
-![Confusion matrix on the held-out test set](results/confusion_matrix.png)
-
-![Fixed random sample of test predictions](results/sample_predictions.png)
-
-Trash recall was only 40% (8/20 images), so overall accuracy hides a substantial weakness. The model predicted glass for 12 of 72 plastic images. Cardboard and paper performed better in this particular split. These observations describe this test set, not a guarantee of performance on new photos. No hyperparameter search was performed.
+Redistribution permission for the ImageNet-derived weights has not been established in this audit. [Torchvision notes that pretrained weights can have their own terms](https://docs.pytorch.org/vision/stable/models.html). The documented training command generates a checkpoint locally; a fresh clone without weights must complete that step before prediction or app use. The current metrics describe the recorded run, not a guarantee for every retraining. Publication of a downloadable checkpoint remains unresolved.
 
 ## Limitations
 
-- Small, imbalanced dataset, especially the trash class.
-- White-background images may not represent cluttered real-world photos.
-- One category per image; no object localization or handling of multiple items.
-- Always predicts one of six categories, even for unrelated images.
-- A frozen backbone is a simple baseline and may miss waste-specific features.
-- These are dataset labels, not advice about local recycling rules.
+- Small, imbalanced dataset; only 20 trash images in the test split.
+- Plain backgrounds differ from cluttered, poorly lit, or unfamiliar photos.
+- One predicted class per image, with no localization or multiple-item handling.
+- Always selects one of six categories, including for unrelated images.
+- Frozen features may miss waste-specific details; confidence is uncalibrated.
+- The training/validation accuracy gap suggests limited generalization.
+- Dataset categories do not determine local recycling rules.
 
 ## What I learned
 
-This project demonstrates how to load labeled image folders, separate training from evaluation, augment training images, reuse pretrained features, replace a classification layer, save and reload weights, interpret class-level metrics, and connect inference to an upload interface. The real run also illustrates why duplicate checks matter: three identical image pairs had conflicting labels. The class report shows why overall accuracy alone is insufficient: 80.47% accuracy coexists with only 40% recall on trash. Use these observations as starting points for your own portfolio discussion.
-
-## Sharing on GitHub
-
-Include code, requirements, README, the trained checkpoint, and generated results. Exclude .venv/, data/, caches, and logs using .gitignore. GitHub publication is a separate step; no remote repository is created by these scripts.
+This workflow demonstrates labeled folder loading, reproducible splitting, training-only augmentation, transfer learning, freezing BatchNorm statistics, and saving a checkpoint by validation loss. Per-class metrics show why accuracy alone is insufficient. Sharing preprocessing and inference code keeps evaluation and the upload interface consistent. Exact duplicate checks also exposed ambiguous dataset labels that could otherwise cross splits.
 
 ## Verification
 
-Python syntax and dependency checks passed. All 2,527 source images were readable. Saved splits cover the 2,521 retained images with no overlapping paths or exact file hashes. Checkpoint reload and six-class probability outputs were verified. Streamlit AppTest checks passed for an empty upload, an image supplied to the upload handler, the displayed prediction and confidence, the top-three toggle, an invalid image, and a missing checkpoint. These are headless behavior checks; browser appearance was not tested.
+The final audit checked Python syntax and imports, actual dataset counts and saved split, checkpoint class ordering and six-output head, frozen/trainable parameters, and the selected checkpoint against the minimum validation loss in the CSV. Saved per-image test predictions reproduced the classification report and confusion matrix without rerunning test inference. Single-image CPU prediction passed.
 
-## Deploy with Streamlit Community Cloud
-
-1. Publish this repository to GitHub, including models/wastevision.pth and results/. Keep data/, .venv/, and logs excluded.
-2. Sign in at https://share.streamlit.io/ and authorize access to the GitHub repository.
-3. Select Create app, choose the repository and branch, and set the entrypoint to app.py.
-4. In Advanced settings, select Python 3.14 to match the tested local environment, if available.
-5. Deploy and check the build logs, then upload test-image.jpg to verify prediction.
-
-The app loads the trained checkpoint; it does not retrain or require the TrashNet dataset. Cloud dependencies are installed from requirements.txt. This deployment has not yet been run or verified. GitHub publication and deployment do not remove local files.
+Stage 6 headless AppTest checks covered empty input, real image bytes supplied to the upload handler, preview, classification button, displayed prediction/top three, model caching, invalid upload, and simulated missing-checkpoint/inference failures. Local server startup was checked again during the final audit. Browser file-picker interaction, appearance, screen resizing, CUDA, fresh installation, and deployment were not tested. No training was performed for this audit.

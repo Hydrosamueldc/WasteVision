@@ -1,5 +1,16 @@
 .venv/
+venv/
 __pycache__/
 *.py[cod]
-data/
+.pytest_cache/
+.ipynb_checkpoints/
+data/*
+!data/README.md
+models/*.pth
 *.log
+*.tmp
+.env
+.env.*
+.streamlit/secrets.toml
+.DS_Store
+Thumbs.db
