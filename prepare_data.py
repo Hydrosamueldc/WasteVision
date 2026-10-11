@@ -1,7 +1,7 @@
-"""Stage 1 only: inspect TrashNet, create splits, and load image batches.
+"""Inspect TrashNet, prepare dataset splits, and load image batches.
 
 Run: python prepare_data.py
-This script does not create a model or train anything.
+Saved splits preserve the same image assignments across runs.
 """
 import argparse
 from collections import Counter
@@ -100,7 +100,6 @@ def main():
     figure_path = ROOT / "results/dataset_examples.png"
     save_examples(dataset, figure_path, args.seed)
     print("Saved visualization: results/dataset_examples.png")
-    print("Stage 1 complete. No model created or trained.")
 
 
 if __name__ == "__main__":

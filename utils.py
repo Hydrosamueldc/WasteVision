@@ -45,7 +45,7 @@ def preprocessing(training=False):
 
 
 def evaluation_preprocessing():
-    """The deterministic Stage 1 validation/test transform, also for inference."""
+    """Deterministic preprocessing shared by validation, testing, and inference."""
     return transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -125,7 +125,7 @@ def get_splits(dataset, seed, manifest_path):
 
 def predict_image(image, model_path=ROOT / "models/wastevision_stage3.pth", device=None,
                   checkpoint_loader=None):
-    """Predict one image path or PIL image using the saved Stage 3 checkpoint.
+    """Predict one image path or PIL image using the trained checkpoint.
 
     Returns a dictionary with predicted_class, score, and top_three.
     Scores are softmax outputs, not calibrated probabilities of correctness.
@@ -159,10 +159,10 @@ def predict_image(image, model_path=ROOT / "models/wastevision_stage3.pth", devi
     except (OSError, RuntimeError, ValueError, KeyError) as error:
         raise ValueError(f"Cannot load checkpoint {model_path}: {error}") from error
     if checkpoint.get("evaluation_preprocessing") != "resize_224":
-        raise ValueError("Expected the Stage 3 checkpoint with resize_224 preprocessing.")
+        raise ValueError("Expected a checkpoint with resize_224 preprocessing.")
     classes = checkpoint["classes"]
     if classes != checkpoint["split"]["classes"]:
-        raise ValueError("Checkpoint class order differs from the saved Stage 1 class order.")
+        raise ValueError("Checkpoint class order differs from the saved dataset split.")
     model.eval()
     batch = evaluation_preprocessing()(rgb_image).unsqueeze(0).to(device)
     with torch.no_grad():
@@ -178,14 +178,14 @@ def predict_image(image, model_path=ROOT / "models/wastevision_stage3.pth", devi
 
 
 def check_model():
-    """Stage 2 only: initialize pretrained ResNet18 and verify its output."""
+    """Initialize pretrained ResNet18 and verify its architecture and output shape."""
     seed_everything(42)
     torch.set_num_threads(4)
     dataset = load_dataset(ROOT / "data/dataset-resized")
     # load_dataset already checks that ImageFolder's class order equals CLASSES.
     saved_classes = json.loads((ROOT / "results/splits.json").read_text())["classes"]
     if saved_classes != dataset.classes:
-        raise ValueError("Stage 1's saved class order differs from the dataset.")
+        raise ValueError("Saved split class order differs from the dataset.")
     model = build_model(pretrained=True)
     # Evaluation mode also keeps BatchNorm statistics fixed for this check.
     model.eval()
@@ -213,14 +213,13 @@ def check_model():
     print(f"Dummy input shape: {list(dummy_image.shape)}")
     print(f"Output shape: {list(logits.shape)}")
     print("Output contains finite logits: True")
-    print("Stage 2 complete. No training, optimizer, or loss function used.")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Check the Stage 2 model or predict one image.")
-    parser.add_argument("--image", type=Path, help="Run Stage 5 inference on this image path.")
+    parser = argparse.ArgumentParser(description="Inspect the ResNet18 architecture or predict one image.")
+    parser.add_argument("--image", type=Path, help="Predict the waste category for this image path.")
     args = parser.parse_args()
     if args.image is None:
         check_model()

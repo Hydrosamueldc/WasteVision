@@ -1,4 +1,4 @@
-"""Stage 6: run with streamlit run app.py."""
+"""Waste image classification interface. Run with: streamlit run app.py."""
 import streamlit as st
 import torch
 from PIL import Image, UnidentifiedImageError
@@ -24,7 +24,7 @@ def cached_checkpoint(path, device):
 
 
 if not MODEL_PATH.is_file():
-    st.error("Model checkpoint missing: models/wastevision_stage3.pth. Restore the saved Stage 3 checkpoint.")
+    st.error("Model checkpoint missing: models/wastevision_stage3.pth. Restore the trained checkpoint.")
     st.stop()
 
 uploaded = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])

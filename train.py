@@ -1,4 +1,4 @@
-"""Stage 3: train the frozen-backbone ResNet18 head and validate each epoch."""
+"""Train the ResNet18 classification head and validate after each epoch."""
 import argparse
 import csv
 import json
@@ -77,7 +77,7 @@ def main():
         parser.error(f"Dataset folder not found: {data_dir}. Restore TrashNet; no dataset is downloaded.")
     manifest_path = ROOT / "results/splits.json"
     if not manifest_path.is_file():
-        parser.error("Stage 1 split not found: results/splits.json. Run prepare_data.py first.")
+        parser.error("Dataset split not found: results/splits.json. Run prepare_data.py first.")
     try:
         args.model_path.parent.mkdir(parents=True, exist_ok=True)
         if args.model_path.exists() and not args.model_path.is_file():
@@ -89,10 +89,10 @@ def main():
         _, dataset, loaders = prepare_data(data_dir, args.batch_size, args.seed)
     except (FileNotFoundError, ValueError) as error:
         parser.error(str(error))
-    # Stage 1 sets the random seeds and checks class order and split assignments.
+    # prepare_data sets the seeds and checks class order and split assignments.
     manifest = json.loads(manifest_path.read_text())
     train_loader, val_loader = loaders["train"], loaders["val"]
-    # The test DataLoader is never iterated in Stage 3.
+    # Use only training and validation data to select the checkpoint.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}; seed: {args.seed}", flush=True)
     print(f"Train: {len(train_loader.dataset)}; validation: {len(val_loader.dataset)}; test: unused", flush=True)
@@ -134,7 +134,6 @@ def main():
     print(f"Best model: {args.model_path.resolve()}", flush=True)
     print(f"Training history: {history_path}", flush=True)
     print(f"Training curves: {plot_path}", flush=True)
-    print("Stage 3 complete. Test set was not evaluated.", flush=True)
 
 
 if __name__ == "__main__":

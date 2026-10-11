@@ -1,4 +1,4 @@
-"""Stage 4: evaluate the Stage 3 best-loss checkpoint on the saved test split."""
+"""Evaluate the best validation-loss checkpoint on the held-out test split."""
 import argparse
 import csv
 import json
@@ -64,7 +64,7 @@ def main():
     if not data_dir.is_dir():
         parser.error(f"Dataset folder not found: {data_dir}. Restore the original TrashNet dataset.")
     if not split_path.is_file():
-        parser.error("Saved Stage 1 split missing: results/splits.json. No new split will be created.")
+        parser.error("Saved dataset split missing: results/splits.json. Restore the split used for training.")
     torch.set_num_threads(4)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     try:
@@ -73,9 +73,9 @@ def main():
         if checkpoint["split"] != manifest:
             raise ValueError("The saved split differs from the split used by this checkpoint.")
         if checkpoint.get("selection_metric") != "val_loss":
-            raise ValueError("Expected the Stage 3 checkpoint selected by validation loss.")
+            raise ValueError("Expected a checkpoint selected by validation loss.")
         if checkpoint.get("evaluation_preprocessing") != "resize_224":
-            raise ValueError("Checkpoint preprocessing does not match the Stage 1 test loader.")
+            raise ValueError("Checkpoint preprocessing does not match the test loader.")
         _, dataset, loaders = prepare_data(data_dir, batch_size=32, seed=checkpoint["seed"])
         classes = dataset.classes
         if checkpoint["classes"] != classes:
@@ -140,7 +140,7 @@ def main():
             writer.writerow([name, *row.tolist()])
     fig, ax = plt.subplots(figsize=(8, 7))
     ConfusionMatrixDisplay(matrix, display_labels=classes).plot(ax=ax, cmap="Blues", colorbar=False)
-    ax.set(title="Stage 3 checkpoint — held-out test counts", xlabel="Predicted label", ylabel="True label")
+    ax.set(title="Waste classification — held-out test counts", xlabel="Predicted label", ylabel="True label")
     fig.tight_layout()
     fig.savefig(results / "confusion_matrix.png", dpi=150)
     plt.close(fig)
@@ -154,7 +154,6 @@ def main():
     for name in ("classification_report.txt", "metrics.json", "confusion_matrix.csv",
                  "confusion_matrix.png", "sample_predictions.png"):
         print(f"Saved: {results / name}", flush=True)
-    print("Stage 4 complete. No retraining or model updates performed.", flush=True)
 
 
 if __name__ == "__main__":
